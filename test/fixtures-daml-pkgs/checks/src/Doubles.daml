@@ -1,0 +1,7 @@
+module Doubles where
+
+template MaliciousFactory
+  with
+    attacker : Party
+  where
+    signatory attacker

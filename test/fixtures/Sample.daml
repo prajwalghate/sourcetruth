@@ -1,0 +1,50 @@
+-- A fixture we own, exercising each resolution rule plus one deliberate hole.
+-- The comments here are LIES on purpose: the parser must not read them.
+module Sample where
+
+template Vault
+  with
+    owner : Party
+    operator : Party
+    escrowCid : ContractId Escrow
+  where
+    signatory owner
+    observer operator
+    ensure owner /= operator
+
+    -- This choice is nonconsuming and touches nothing.  <- false, it is consuming
+    choice Close : ContractId Receipt
+      with
+        configCid : ContractId Config
+        mysteryCid : ContractId Config
+      controller owner
+      do
+        _cfg <- fetch configCid          -- resolves via choice arg
+        _esc <- fetch escrowCid          -- resolves via TEMPLATE FIELD
+        archive escrowCid
+        create Receipt with owner
+
+    nonconsuming choice Peek : ()
+      controller owner, operator
+      do
+        pure ()
+
+    choice Bump : ContractId Vault
+      controller operator
+      do
+        create this with owner
+
+template Escrow
+  with owner : Party
+  where
+    signatory owner
+
+template Config
+  with owner : Party
+  where
+    signatory owner
+
+template Receipt
+  with owner : Party
+  where
+    signatory owner

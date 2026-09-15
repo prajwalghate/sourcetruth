@@ -1,0 +1,7 @@
+module Main where
+
+template Pool
+  with
+    operator : Party
+  where
+    signatory operator

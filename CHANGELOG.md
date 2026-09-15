@@ -1,0 +1,22 @@
+# Changelog
+
+## 0.1.0 — unreleased
+
+First release.
+
+- **Daml and Solidity** source, detected automatically.
+- **The map** (`--html`): who can act, split into outside and inside the protocol; each action's
+  archives, creates and calls in code order, with **Play**; whose authority an action carries beyond
+  its caller; which contract ids the caller chooses; each contract's life; blind spots in amber.
+  One self-contained file, deterministic, with a guided tour and a Learn view drawn from your code.
+- **Solidity tracing**: every call site classified — typed variables, casts, libraries, `this.`, ETH
+  and low-level calls — with nothing dropped. Access checks followed through helpers, inheritance
+  and vendored modifiers, credited only when they run on every path. Inherited public functions from
+  vendored parents appear on the contracts that run them. Imports resolved through remappings,
+  node_modules and nested dependencies; missing ones reported.
+- **Daml tracing**: controllers, signatories, consuming effects, helper functions folded into the
+  choices that call them, test packages excluded.
+- `--surface`, `--holes`, `--graph`, `--json` (schemaVersion 1), `--min-resolution` for CI,
+  `--demo`, `-o`.
+- **GitHub Action** (`action.yml`): builds the map, uploads it, writes a run summary, and can fail
+  below a resolution floor.

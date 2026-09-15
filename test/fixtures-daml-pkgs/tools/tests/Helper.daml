@@ -1,0 +1,7 @@
+module Helper where
+
+template TestMarker
+  with
+    p : Party
+  where
+    signatory p

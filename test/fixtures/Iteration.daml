@@ -1,0 +1,124 @@
+-- Fixture for the two binder forms that real codebases use and a naive reader misses.
+module Iteration where
+
+template Pool
+  with
+    admin : Party
+    owner : Party
+    existing : Optional (ContractId Slot)   -- Optional-wrapped cid
+  where
+    signatory owner
+
+    -- Binds through `case … of Some x ->`, where the declared type is Optional (ContractId T).
+    choice TakeExisting : ()
+      controller owner
+      do
+        _ <- case existing of
+          Some slotCid -> do
+            _s <- fetch slotCid
+            pure ()
+          None -> pure ()
+        pure ()
+
+    -- Binds a lambda parameter to the ELEMENT type of the list, which is named AFTER the body.
+    choice SumAll : ()
+      with
+        slotCids : [ContractId Slot]
+      controller owner
+      do
+        _ <- mapA (\cid -> do
+          _s <- fetch cid
+          pure ()) slotCids
+        pure ()
+
+    -- The forA form, where the list comes first.
+    choice SumAllFor : ()
+      with
+        slotCids2 : [ContractId Slot]
+      controller owner
+      do
+        _ <- forA slotCids2 (\cid2 -> do
+          _s <- fetch cid2
+          pure ())
+        pure ()
+
+    -- A lambda over something we CANNOT type. Must stay a hole, not be guessed.
+    choice Unknowable : ()
+      controller owner
+      do
+        _ <- mapA (\mystery -> do
+          _s <- fetch mystery
+          pure ()) someUndeclaredThing
+        pure ()
+
+    -- A MODULE-QUALIFIED choice. Capturing only the first capitalised token takes the alias as
+    -- the choice name, so the result never binds and every later use of it cascades into a hole.
+    choice ViaQualified : ()
+      with
+        slotCid3 : ContractId Slot
+      controller owner
+      do
+        nextCid <- exercise slotCid3 Q.Advance
+        _s <- fetch nextCid
+        pure ()
+
+    choice InlineWith : ()
+      with amount : Int
+      -- a comment between the inline `with` and the controller
+      controller owner, admin
+      do
+        pure ()
+
+    -- RULE 1: the exercise-result destructure WRAPS onto the next line.
+    choice WrappedResult : ()
+      with slotCid4 : ContractId Slot
+      controller owner
+      do
+        (a, b) <-
+          exercise slotCid4 Pair
+        _x <- fetch a
+        pure ()
+
+    -- RULE 2: a LITERAL TUPLE scrutinee; component 2 is a typed optional cid.
+    choice TupleCase : ()
+      with maybeSlot : Optional (ContractId Slot)
+      controller owner
+      do
+        _ <- case (1 > 0, maybeSlot) of
+          (True, Some tupCid) -> do
+            _s <- fetch tupCid
+            pure ()
+          _ -> pure ()
+        pure ()
+
+    -- RULE 3: list and cons patterns over a list-typed scrutinee.
+    choice ListCase : ()
+      with slotCids5 : [ContractId Slot]
+      controller owner
+      do
+        _ <- case slotCids5 of
+          [only] -> do
+            _s <- fetch only
+            pure ()
+          (headCid :: _) -> do
+            _s <- fetch headCid
+            pure ()
+          [] -> pure ()
+        pure ()
+
+template Slot
+  with owner : Party
+  where
+    signatory owner
+
+    choice Pair : (ContractId Slot, ContractId Slot)
+      controller owner
+      do
+        a <- create this with owner
+        b <- create this with owner
+        pure (a, b)
+
+    choice Advance : ContractId Slot
+      controller owner
+      do
+        create this with owner

@@ -1,0 +1,14 @@
+{
+  "name": "sourcetruth-website",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "demos": "node scripts/demos.mjs",
+    "dev": "npm run demos && vitepress dev --port 5173",
+    "build": "npm run demos && vitepress build",
+    "preview": "vitepress preview --port 4173"
+  },
+  "devDependencies": {
+    "vitepress": "1.6.4"
+  }
+}

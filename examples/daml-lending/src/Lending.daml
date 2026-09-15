@@ -1,0 +1,92 @@
+-- A small lending protocol, written to show what sourcetruth draws. Not production code.
+module Lending where
+
+template Pool
+  with
+    operator : Party
+    rateBps : Int
+  where
+    signatory operator
+
+    nonconsuming choice OpenPosition : ContractId Position
+      with
+        owner : Party
+        collateral : Decimal
+      controller owner
+      do
+        assertMsg "collateral must be positive" (collateral > 0.0)
+        create Position with operator; owner; collateral; debt = 0.0
+
+    choice SetRate : ContractId Pool
+      with
+        newRate : Int
+      controller operator
+      do
+        create this with rateBps = newRate
+
+template Position
+  with
+    operator : Party
+    owner : Party
+    collateral : Decimal
+    debt : Decimal
+  where
+    signatory operator, owner
+
+    choice Borrow : ContractId Position
+      with
+        amount : Decimal
+        priceCid : ContractId Price
+      controller owner
+      do
+        price <- fetch priceCid
+        assertMsg "undercollateralised" (collateral * price.value >= (debt + amount) * 1.5)
+        create this with debt = debt + amount
+
+    choice Repay : ContractId Position
+      with
+        amount : Decimal
+      controller owner
+      do
+        create this with debt = debt - amount
+
+    choice Close : ()
+      controller owner
+      do
+        assertMsg "debt outstanding" (debt == 0.0)
+        pure ()
+
+    choice Liquidate : ContractId Receipt
+      with
+        liquidator : Party
+        priceCid : ContractId Price
+        evidence : [ContractId Price]
+      controller liquidator
+      do
+        price <- fetch priceCid
+        let (primary, backup) = (priceCid, head evidence)
+        second <- fetch backup
+        assertMsg "position is healthy" (collateral * price.value < debt * 1.1 && price.value == second.value)
+        create Receipt with operator; liquidator; seized = collateral
+
+template Receipt
+  with
+    operator : Party
+    liquidator : Party
+    seized : Decimal
+  where
+    signatory operator
+
+template Price
+  with
+    oracle : Party
+    value : Decimal
+  where
+    signatory oracle
+
+    choice Update : ContractId Price
+      with
+        newValue : Decimal
+      controller oracle
+      do
+        create this with value = newValue

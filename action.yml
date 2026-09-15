@@ -1,0 +1,95 @@
+name: sourcetruth
+description: Map what Daml or Solidity code does — who can act, what each action changes — and fail the build if too little can be traced.
+author: prajwalghate
+branding:
+  icon: map
+  color: blue
+
+inputs:
+  path:
+    description: Directory holding the Daml or Solidity source.
+    required: true
+    default: "."
+  title:
+    description: Name shown on the map. Defaults to the repository name.
+    required: false
+    default: ""
+  min-resolution:
+    description: Fail if fewer than this percentage of links can be traced. 0 turns the check off.
+    required: false
+    default: "0"
+  output:
+    description: File to write the map to.
+    required: false
+    default: sourcetruth-map.html
+  include-tests:
+    description: Also map test packages, TestContracts/, mocks/ and *.t.sol files.
+    required: false
+    default: "false"
+  upload:
+    description: Upload the map as a workflow artifact.
+    required: false
+    default: "true"
+
+outputs:
+  resolution:
+    description: Percentage of links between contracts that could be traced from source.
+    value: ${{ steps.map.outputs.resolution }}
+  blind-spots:
+    description: Number of links that could not be traced.
+    value: ${{ steps.map.outputs.blind_spots }}
+
+runs:
+  using: composite
+  steps:
+    - uses: actions/setup-node@v4
+      with:
+        node-version: 22
+
+    - id: map
+      shell: bash
+      # Inputs reach the script through the environment, never by ${{ }} substitution into the
+      # script text — a path or title containing `$(...)` must stay a string.
+      env:
+        ST_CLI: ${{ github.action_path }}/bin/sourcetruth.mjs
+        ST_PATH: ${{ inputs.path }}
+        ST_TITLE: ${{ inputs.title != '' && inputs.title || github.repository }}
+        ST_OUT: ${{ inputs.output }}
+        ST_MIN: ${{ inputs.min-resolution }}
+        ST_TESTS: ${{ inputs.include-tests }}
+      run: |
+        set -euo pipefail
+        extra=()
+        if [ "$ST_TESTS" = "true" ]; then extra+=(--include-tests); fi
+        node "$ST_CLI" "$ST_PATH" --html --title "$ST_TITLE" -o "$ST_OUT" ${extra[@]+"${extra[@]}"}
+        node "$ST_CLI" "$ST_PATH" --json -o "$RUNNER_TEMP/sourcetruth.json" ${extra[@]+"${extra[@]}"}
+        read -r res holes units entries notes < <(node -e '
+          const m = require(process.argv[1]);
+          console.log(m.stats.resolution ?? 100, m.stats.holes, m.stats.units, m.stats.entries, m.notes.length);
+        ' "$RUNNER_TEMP/sourcetruth.json")
+        echo "resolution=$res" >> "$GITHUB_OUTPUT"
+        echo "blind_spots=$holes" >> "$GITHUB_OUTPUT"
+        {
+          echo "### sourcetruth"
+          echo ""
+          echo "| contracts | actions | traced | blind spots |"
+          echo "|---:|---:|---:|---:|"
+          echo "| $units | $entries | $res% | $holes |"
+          if [ "$notes" -gt 0 ]; then
+            echo ""
+            node -e 'for (const n of require(process.argv[1]).notes) console.log(`> ${n}`)' "$RUNNER_TEMP/sourcetruth.json"
+          fi
+          echo ""
+          echo "Download **sourcetruth-map** from this run's artifacts and open the HTML file."
+        } >> "$GITHUB_STEP_SUMMARY"
+        if [ "$ST_MIN" != "0" ] && [ "$res" -lt "$ST_MIN" ]; then
+          echo "::error::sourcetruth traced $res% of links, below the required $ST_MIN%"
+          exit 1
+        fi
+
+    - if: ${{ inputs.upload == 'true' && always() }}
+      uses: actions/upload-artifact@v4
+      with:
+        name: sourcetruth-map
+        path: ${{ inputs.output }}
+        if-no-files-found: warn

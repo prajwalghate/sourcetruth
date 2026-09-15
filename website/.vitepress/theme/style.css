@@ -1,0 +1,71 @@
+/* The site wears the map's own colours: flow blue is "follow this", violet is authority that is not
+   the caller's own. The hero gradient runs from one to the other. */
+:root {
+  --vp-c-brand-1: #2f5bea;
+  --vp-c-brand-2: #4b72f0;
+  --vp-c-brand-3: #2f5bea;
+  --vp-c-brand-soft: rgba(47, 91, 234, 0.12);
+
+  --vp-button-brand-bg: #2f5bea;
+  --vp-button-brand-hover-bg: #2449c9;
+  --vp-button-brand-active-bg: #1f3fb0;
+  --vp-button-brand-text: #ffffff;
+
+  --vp-home-hero-name-color: transparent;
+  --vp-home-hero-name-background: -webkit-linear-gradient(120deg, #2f5bea 30%, #8a3fc7);
+  --vp-home-hero-image-background-image: linear-gradient(-45deg, #4b72f0 50%, #a45fe0 50%);
+  --vp-home-hero-image-filter: blur(44px);
+
+  --st-make: #1c8549;
+  --st-end: #cc2f37;
+  --st-flow: #2f5bea;
+  --st-power: #8a3fc7;
+  --st-blind: #a86400;
+}
+
+.dark {
+  --vp-c-brand-1: #7ea1ff;
+  --vp-c-brand-2: #9bb6ff;
+  --vp-c-brand-3: #4b72f0;
+  --vp-c-brand-soft: rgba(126, 161, 255, 0.16);
+
+  --vp-button-brand-bg: #3f63e4;
+  --vp-button-brand-hover-bg: #5478f0;
+  --vp-button-brand-active-bg: #2f5bea;
+
+  --vp-home-hero-name-background: -webkit-linear-gradient(120deg, #7ea1ff 30%, #c79dff);
+  --vp-home-hero-image-background-image: linear-gradient(-45deg, #3f63e4 50%, #8a3fc7 50%);
+
+  --st-make: #4fcb86;
+  --st-end: #ff6e72;
+  --st-flow: #7ea1ff;
+  --st-power: #c79dff;
+  --st-blind: #ffb547;
+}
+
+@media (min-width: 640px) {
+  :root { --vp-home-hero-image-filter: blur(56px); }
+}
+@media (min-width: 960px) {
+  :root { --vp-home-hero-image-filter: blur(68px); }
+}
+
+/* Home: the sections under the feature cards */
+.home-sections { max-width: 1152px; margin: 0 auto; padding: 48px 24px 96px; display: flex; flex-direction: column; gap: 64px; }
+@media (min-width: 640px) { .home-sections { padding: 64px 48px 112px; } }
+@media (min-width: 960px) { .home-sections { padding: 72px 64px 120px; } }
+.home-sections h2 { font-size: 26px; font-weight: 700; letter-spacing: -0.02em; line-height: 1.25; margin: 0 0 8px; border: 0; padding: 0; }
+.home-sections .lede { margin: 0 0 20px; max-width: 64ch; color: var(--vp-c-text-2); font-size: 16px; line-height: 1.65; }
+
+.rules { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 16px; }
+.rule { background: var(--vp-c-bg-soft); border-radius: 12px; padding: 24px; }
+.rule h3 { margin: 0 0 8px; font-size: 16px; font-weight: 600; }
+.rule p { margin: 0; color: var(--vp-c-text-2); font-size: 14px; line-height: 1.6; }
+
+.legend { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 12px; margin: 16px 0; }
+.legend .key { display: flex; align-items: center; gap: 12px; background: var(--vp-c-bg-soft); border-radius: 10px; padding: 12px 14px; }
+.legend .swatch { width: 28px; height: 20px; flex: none; border-radius: 5px; border: 2px solid currentColor; position: relative; }
+.legend .swatch::after { content: ""; position: absolute; inset: 3px; border-radius: 2px; background: currentColor; opacity: 0.18; }
+.legend .swatch.dashed { border-style: dashed; }
+.legend b { display: block; font-size: 14px; line-height: 1.3; }
+.legend span.what { font-size: 13px; color: var(--vp-c-text-2); line-height: 1.4; }

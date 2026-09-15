@@ -1,0 +1,3 @@
+@inner/=lib/inner/contracts/
+@vendor/=lib/vendor/
+@gone/=lib/gone/

@@ -1,0 +1,36 @@
+-- A choice whose body is trivial, followed by a large block comment. Once comments are stripped the
+-- captured body is hundreds of characters of near-pure whitespace with no `<-` anywhere in it — the
+-- shape that once made the resolver's binder regex non-terminating.
+module Pathological where
+
+template Session
+  with
+    host : Party
+  where
+    signatory host
+
+    choice Cancel : ()
+      with
+        anyone : Party
+      controller anyone
+        do
+          return ()
+
+{-
+walkthrough = script do
+    [host, guest, observer] <- mapA allocateParty ["Host", "Guest", "Observer"]
+    let deadline = time (date 2030 Jan 1) 9 30 00
+    sessionId <- submit host $ createCmd Session with host
+    first <- submit guest $ exerciseCmd sessionId Cancel with anyone = guest
+    case first of
+      () -> do
+        pure ()
+    second <- submit observer $ exerciseCmd sessionId Cancel with anyone = observer
+    case second of
+      () -> do
+        assert True
+    replay <- submit host $ exerciseCmd sessionId Cancel with anyone = host
+    case replay of
+      () -> do
+        pure ()
+-}
