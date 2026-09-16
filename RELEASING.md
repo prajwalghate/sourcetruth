@@ -51,9 +51,12 @@ publish rights from bypass-2FA tokens, so don't go back to that.
 tag matches `package.json`, publishes to npm with provenance, creates the GitHub release, and moves
 the `v0` tag that `uses: prajwalghate/sourcetruth@v0` resolves to.
 
-**If the publish step fails,** fix the cause and use *Re-run jobs* on that run — it reruns the same
-tag. `ENEEDAUTH` or `E403` from the publish step: check the trusted publisher on npmjs.com — the
-repository, the workflow file name, and that **npm publish** is an allowed action.
+**If the publish step fails,** its annotation on the run page says why — npm prints the
+trusted-publishing reason only to its debug log, and the step copies it out. Fix the cause and use
+*Re-run jobs* on that run; it reruns the same tag. `ENEEDAUTH` or `E403`: check the trusted publisher
+on npmjs.com — the repository, the workflow file name, and that **npm publish** is an allowed action.
+If the workflow itself had to change, nothing was published, so delete the tag, tag the fixed commit
+with the same version and push it again.
 
 *Staged publishing* is the stricter alternative: the workflow runs `npm stage publish` (npm 11.15.0 or
 newer) and nothing goes live until a maintainer approves it with 2FA on npmjs.com.

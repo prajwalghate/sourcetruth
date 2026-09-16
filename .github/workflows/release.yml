@@ -29,12 +29,25 @@ jobs:
       - run: npm test
       - name: The tag matches package.json
         run: test "v$(node -p 'require("./package.json").version')" = "$GITHUB_REF_NAME"
-      - run: npm publish --provenance --access public
+      - name: npm publish
         env:
           # Empty on purpose. npm swaps in a short-lived token from the OIDC exchange; if npm has no
           # trusted publisher for this workflow, publishing stops with ENEEDAUTH instead of using a
           # stale token.
           NODE_AUTH_TOKEN: ""
+        run: |
+          set -o pipefail
+          logs="$RUNNER_TEMP/npm-logs"
+          if npm publish --provenance --access public --logs-dir "$logs" 2>&1 | tee "$RUNNER_TEMP/publish.out"; then
+            exit 0
+          fi
+          # npm only writes why trusted publishing failed to its debug log. Lift that, and npm's own
+          # error, into an annotation so the reason is on the run page.
+          oidc=$( { grep -h -E '^[0-9]+ (verbose|silly) oidc ' "$logs"/*.log 2>/dev/null || true; } | sed -E 's/^[0-9]+ [a-z]+ oidc //' | tail -n 3)
+          err=$( { grep -E '^npm error (code |[0-9]{3} )' "$RUNNER_TEMP/publish.out" || true; } | head -n 3)
+          msg=$(printf 'trusted publishing: %s | npm: %s' "${oidc:-nothing logged}" "${err:-no error line}" | tr '\n\r' '  ' | sed -e 's/%/%25/g')
+          echo "::error title=npm publish failed::$msg"
+          exit 1
       - name: GitHub release
         run: gh release create "$GITHUB_REF_NAME" --title "$GITHUB_REF_NAME" --generate-notes
         env:
