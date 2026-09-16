@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.1.1 — 2026-09-17
 
 - **GitHub Action:** now on `actions/setup-node@v7` and `actions/upload-artifact@v7`, which run on
   Node 24 — GitHub is retiring Node 20 on its runners. Self-hosted runners need version 2.327.1 or

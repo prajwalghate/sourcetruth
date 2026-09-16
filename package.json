@@ -1,6 +1,6 @@
 {
   "name": "@prajwalghate/sourcetruth",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "See what Daml and Solidity contract code does — who can act, what each action changes — from source, and what could not be traced.",
   "type": "module",
   "bin": { "sourcetruth": "bin/sourcetruth.mjs" },
