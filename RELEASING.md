@@ -10,8 +10,9 @@
 ## One-time setup
 
 1. **Pages:** repository Settings → Pages → Source: **GitHub Actions**.
-2. **npm — trusted publishing, no token.** On npmjs.com: the package → **Settings** →
-   **Trusted publishing** → **GitHub Actions**, then fill in:
+2. **npm — trusted publishing, no token.** Signed in on npmjs.com, open the package's settings
+   (https://www.npmjs.com/package/@prajwalghate/sourcetruth/access), find **Trusted Publisher**,
+   click **GitHub Actions**, then fill in:
 
    | Field | Value |
    |---|---|
@@ -19,6 +20,9 @@
    | Repository | `sourcetruth` |
    | Workflow filename | `release.yml` (the file name only, not the path) |
    | Environment name | *(leave empty)* |
+   | Allowed actions | tick **npm publish** — publishers added after 2026-09-03 are otherwise limited to `npm stage publish` |
+
+   Nothing is set on GitHub for this: the workflow's `id-token: write` permission is all it needs.
 
    npm then accepts publishes from that workflow alone, with a short-lived token it issues per run,
    and adds provenance. The release job runs on Node 24 because this needs npm 11.5.1 or newer.
@@ -48,7 +52,11 @@ tag matches `package.json`, publishes to npm with provenance, creates the GitHub
 the `v0` tag that `uses: prajwalghate/sourcetruth@v0` resolves to.
 
 **If the publish step fails,** fix the cause and use *Re-run jobs* on that run — it reruns the same
-tag. `ENEEDAUTH` means npm has no trusted publisher matching this repository and workflow file.
+tag. `ENEEDAUTH` or `E403` from the publish step: check the trusted publisher on npmjs.com — the
+repository, the workflow file name, and that **npm publish** is an allowed action.
+
+*Staged publishing* is the stricter alternative: the workflow runs `npm stage publish` (npm 11.15.0 or
+newer) and nothing goes live until a maintainer approves it with 2FA on npmjs.com.
 
 To publish by hand instead: `npm login`, then `npm publish --access public` (asks for your 2FA code;
 a package published from a laptop has no provenance).
