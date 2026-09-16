@@ -79,7 +79,7 @@ sourcetruth ./contracts --html -o map.html    # your code
   <p class="lede">The GitHub Action uploads the map as an artifact, writes a summary on the run, and fails the build when tracing drops below your floor — the signal that code arrived the tool can’t follow.</p>
 
 ```yaml
-- uses: actions/checkout@v4
+- uses: actions/checkout@v7
   with:
     submodules: recursive
 - uses: prajwalghate/sourcetruth@v0

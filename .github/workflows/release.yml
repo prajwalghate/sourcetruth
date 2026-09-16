@@ -1,6 +1,7 @@
 name: release
 
-# Push a tag like v0.1.0 to publish. Needs an NPM_TOKEN repository secret (an npm automation token).
+# Push a tag like v0.1.1 to publish. There is no npm token: npm trusts this workflow through GitHub's
+# OIDC token (trusted publishing, set on the package's settings page on npmjs.com — see RELEASING.md).
 on:
   push:
     tags: ["v*.*.*"]
@@ -13,17 +14,27 @@ jobs:
   publish:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
         with:
-          node-version: 22
+          node-version: 24 # trusted publishing needs npm 11.5.1 or newer; Node 22 ships npm 10
           registry-url: https://registry.npmjs.org
+          package-manager-cache: false
+      - name: This npm can publish through OIDC
+        run: |
+          v="$(npm --version)"
+          node -e 'const [a, b, c] = process.argv[1].split(".").map(Number);
+            if (a * 1e6 + b * 1e3 + c < 11005001) { console.error(`npm ${process.argv[1]} is older than 11.5.1`); process.exit(1) }' "$v" \
+            || { echo "::error::npm $v cannot use trusted publishing; it needs 11.5.1 or newer"; exit 1; }
       - run: npm test
       - name: The tag matches package.json
         run: test "v$(node -p 'require("./package.json").version')" = "$GITHUB_REF_NAME"
       - run: npm publish --provenance --access public
         env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+          # Empty on purpose. npm swaps in a short-lived token from the OIDC exchange; if npm has no
+          # trusted publisher for this workflow, publishing stops with ENEEDAUTH instead of using a
+          # stale token.
+          NODE_AUTH_TOKEN: ""
       - name: GitHub release
         run: gh release create "$GITHUB_REF_NAME" --title "$GITHUB_REF_NAME" --generate-notes
         env:

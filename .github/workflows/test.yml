@@ -17,8 +17,8 @@ jobs:
         os: [ubuntu-latest, macos-latest]
         node: [22, 24]
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
         with:
           node-version: ${{ matrix.node }}
       - run: npm test
@@ -27,7 +27,9 @@ jobs:
   action:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
+      - name: Look like a caller that names npm but has no lockfile
+        run: npm pkg set packageManager=npm@11.19.0 && test ! -e package-lock.json
       - id: map
         uses: ./
         with:
@@ -36,3 +38,21 @@ jobs:
           output: vault-map.html
       - name: The example vault has exactly one blind spot
         run: test "${{ steps.map.outputs.blind-spots }}" = "1"
+
+  package:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24 # the release job's Node, so the same npm
+      - name: package.json publishes as written
+        # A dry run against an unreachable registry: nothing is uploaded, but npm still reports every
+        # field it would have to rewrite.
+        run: |
+          out=$(npm publish --dry-run --registry http://127.0.0.1:9 2>&1) || { printf '%s\n' "$out"; exit 1; }
+          if printf '%s\n' "$out" | grep -q 'auto-corrected'; then
+            printf '%s\n' "$out" | grep 'npm warn publish'
+            echo "::error::npm would rewrite package.json on publish. Run 'npm pkg fix' and keep what it changes."
+            exit 1
+          fi

@@ -198,7 +198,7 @@ jobs:
   map:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           submodules: recursive        # so inherited code and access checks can be read
       - uses: prajwalghate/sourcetruth@v0

@@ -1,5 +1,16 @@
 # Changelog
 
+## Unreleased
+
+- **GitHub Action:** now on `actions/setup-node@v7` and `actions/upload-artifact@v7`, which run on
+  Node 24 — GitHub is retiring Node 20 on its runners. Self-hosted runners need version 2.327.1 or
+  newer. Dependency caching stays off, so the action can't fail in a repository that names npm as its
+  package manager but has no lockfile.
+- **Releases** are published from GitHub Actions without an npm token (npm trusted publishing),
+  still with provenance.
+- `package.json` is written the way npm publishes it, so publishing no longer warns about the `bin`
+  path. CI now fails if npm would have to rewrite `package.json`.
+
 ## 0.1.0 — 2026-09-16
 
 First release.

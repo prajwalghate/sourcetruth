@@ -40,3 +40,11 @@
 - a failed step, with an error annotation, when `min-resolution` isn't met.
 
 Check out submodules (`submodules: recursive`) so inherited code and access checks can be read.
+
+## Runners
+
+GitHub-hosted runners work as they are. On a self-hosted runner, use runner version 2.327.1 or
+newer; the actions this one builds on run on Node 24.
+
+The action sets up Node 22, and later steps in the same job see that Node too — if they need another
+version, set it up after this step. It turns no dependency caching on.
