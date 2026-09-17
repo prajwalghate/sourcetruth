@@ -1,11 +1,11 @@
 # Contributing
 
-Thanks for helping. sourcetruth is small, has no dependencies, and runs on Node 22+.
+Thanks for helping. sourcetruth is small, has no dependencies, and runs on Node 22+. Clone it, run the whole test suite, and render the demo:
 
 ```bash
 git clone https://github.com/prajwalghate/sourcetruth.git
 cd sourcetruth
-npm test                                    # the whole suite
+npm test
 node bin/sourcetruth.mjs --demo -o demo.html
 ```
 

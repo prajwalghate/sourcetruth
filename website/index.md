@@ -45,13 +45,12 @@ features:
 
 <section>
   <h2>Install and run</h2>
-  <p class="lede">Node 22 or newer. No dependencies.</p>
+  <p class="lede">Node 22 or newer, no dependencies. Install it, draw the map above on your machine, then map your own code.</p>
 
 ```bash
 npm install -g @prajwalghate/sourcetruth
-
-sourcetruth --demo -o demo.html               # the map above, on your machine
-sourcetruth ./contracts --html -o map.html    # your code
+sourcetruth --demo -o demo.html
+sourcetruth ./contracts --html -o map.html
 ```
 
 </section>

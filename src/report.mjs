@@ -17,11 +17,16 @@
 // what could not be determined. Deciding what is WRONG is the reader's job, kept in their register.
 
 import fs from "node:fs";
+import path from "node:path";
 import { attackSurface, graph } from "./model.mjs";
 import { viewData, embed, EFFECT_LABEL } from "./view.mjs";
 
 const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) =>
   ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+
+/** Maps get attached to tickets and posted. The path above the folder that was read — a username, a
+ *  client's name — is nobody's business, so a map names the folder alone. */
+const folder = (root) => path.basename(String(root ?? "")) || String(root ?? "");
 
 /** Entry anchors are shared with the map, which reads each action's source out of the listing. */
 export const anchor = (unit, name) => `e-${unit}-${name}`.replace(/[^\w-]/g, "_");
@@ -226,7 +231,7 @@ ${LISTING_CSS}
 <noscript><p class="noscript">The interactive map needs JavaScript. Everything it shows is listed below.</p></noscript>
 <header class="code-top">
   <h1>${esc(title)}</h1>
-  <div class="sub">${esc(model.root)} · ${esc(model.language)}${generatedAt ? ` · ${esc(generatedAt)}` : ""}</div>
+  <div class="sub">${esc(folder(model.root))} · ${esc(model.language)}${generatedAt ? ` · ${esc(generatedAt)}` : ""}</div>
 </header>
 
 <div class="stats">

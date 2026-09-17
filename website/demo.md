@@ -15,9 +15,11 @@ Two small protocols ship with sourcetruth, written to show everything the map ca
 
 ```bash
 npm install -g @prajwalghate/sourcetruth
-sourcetruth --demo -o demo.html              # the Solidity vault
-sourcetruth --demo daml -o demo-daml.html    # the Daml lending protocol
+sourcetruth --demo -o demo.html
+sourcetruth --demo daml -o demo-daml.html
 ```
+
+`demo.html` is the Solidity vault and `demo-daml.html` the Daml lending protocol. Open them in a browser: double-click the file, or on a Mac run `open demo.html`.
 
 The example source lives in [`examples/`](https://github.com/prajwalghate/sourcetruth/tree/main/examples) in the repository.
 

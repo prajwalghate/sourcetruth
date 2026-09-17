@@ -76,6 +76,14 @@ test("an empty model renders a valid page rather than crashing", () => {
   assert.ok(empty.includes("no .daml source found"));
 });
 
+test("a map names the folder it read, never the path to it — maps get shared", () => {
+  const where = "/home/some-user/clients/secret-project/contracts";
+  const html = render(model({ language: "daml", root: where, notes: [] }));
+  assert.equal(html.includes("some-user"), false, "the path above the folder leaked into the map");
+  assert.equal(html.includes("secret-project"), false, "a parent folder's name leaked into the map");
+  assert.ok(html.includes(">contracts · daml<"), "the folder's own name is still shown");
+});
+
 test("holes are rendered as holes, never as a resolved target", () => {
   // The fixture has one deliberate unresolvable edge.
   assert.ok(html.includes("could not determine"), "hole not surfaced");

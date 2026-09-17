@@ -15,13 +15,17 @@ The document starts with:
   "schemaVersion": 1,
   "tool": { "name": "sourcetruth", "version": "0.1.0" },
   "language": "solidity",
-  "root": "/path/you/passed",
+  "root": "/absolute/path/of/the/folder",
   "...": "..."
 }
 ```
 
 `schemaVersion` changes only when a field changes meaning or is removed. New fields may appear
 without a bump.
+
+`root` is the absolute path of the folder that was read, on the machine that ran the command, so a
+script can find the files that `path` fields point at. Remove it before sharing the JSON — the HTML
+map shows only the folder's name.
 
 ## Top level
 
@@ -66,13 +70,20 @@ without a bump.
 
 ## Recipes
 
+Every state-changing function with no access check:
+
 ```bash
-# every state-changing function with no access check
 jq -r '.entries[] | select(.authority == [] and .effect != "none" and (.declared|not) and (.deployOnly|not)) | "\(.unit).\(.name)"' model.json
+```
 
-# every blind spot, with where it is
+Every blind spot, with where it is:
+
+```bash
 jq -r '.holes[] | "\(.path)  \(.owner)  \(.raw)"' model.json
+```
 
-# actions that carry an inherited vendored implementation
+Actions that carry an inherited vendored implementation:
+
+```bash
 jq -r '.entries[] | select(.inherited) | "\(.unit).\(.name) from \(.inherited)"' model.json
 ```

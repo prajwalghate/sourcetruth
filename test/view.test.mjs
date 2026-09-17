@@ -154,8 +154,8 @@ test("a controller expression is drawn as an expression, not as a named party", 
 });
 
 test("a contract archived and re-created from another contract is REPLACED, not fixed and not ended", () => {
-  // Regression, found on a real pool: a deposit position's card said "Nothing replaces it — once made it
-  // stays as it is", while four LendingPool actions archive it and create it again.
+  // Regression: a position's card said "Nothing replaces it — once made it stays as it is", while
+  // actions on another contract archive it and create it again.
   const u = (name, sig) => unit({ name, module: "M", path: "M.daml", line: 1, signatories: [sig] });
   const m = model({
     language: "daml", root: "/x", modules: ["M"],

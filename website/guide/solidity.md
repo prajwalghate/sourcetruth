@@ -54,6 +54,14 @@ If an import isn't on disk — most often a git submodule that was never initial
 at the top, and each function that relies on unread code is marked *relies on code that isn't on
 disk*. Such a function may be guarded in code the tool couldn't see.
 
+Install them and generate the map again. With Foundry:
+
 ```bash
-forge install          # or: git submodule update --init --recursive
+forge install
+```
+
+For plain git submodules:
+
+```bash
+git submodule update --init --recursive
 ```

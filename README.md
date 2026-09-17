@@ -12,9 +12,11 @@ the source. And see, just as plainly, what it **could not trace**.
 Works on **Daml** (Canton) and **Solidity**. One command, one self-contained HTML file, no server.
 
 ```bash
-sourcetruth --demo -o demo.html          # a first look, on a bundled example
+sourcetruth --demo -o demo.html
 sourcetruth ./contracts --html -o map.html
 ```
+
+The first maps a bundled example; the second, your own code.
 
 ## What you get
 
@@ -42,13 +44,15 @@ sourcetruth --version
 
 ## Use it
 
-```bash
-sourcetruth <dir>                      # summary + blind spots in the terminal
-sourcetruth <dir> --html -o map.html   # the interactive map
-sourcetruth <dir> --surface            # actions one party can take alone
-sourcetruth <dir> --json               # the full model, for your own tooling
-sourcetruth <dir> --min-resolution 90  # for CI: fail if too little can be traced
-```
+| Command | Shows |
+|---|---|
+| `sourcetruth ./contracts` | A summary and the blind spots, in the terminal |
+| `sourcetruth ./contracts --html -o map.html` | The interactive map |
+| `sourcetruth ./contracts --surface` | Actions one party can take alone |
+| `sourcetruth ./contracts --json` | The full model, for your own tooling |
+| `sourcetruth ./contracts --min-resolution 90` | For CI: fails if too little can be traced |
+
+Replace `./contracts` with the folder that holds your Daml or Solidity source.
 
 **[GUIDE.md](GUIDE.md)** walks through a first audit, reading the map, every option, CI, and what
 the tool cannot tell you.

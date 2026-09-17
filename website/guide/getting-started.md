@@ -42,8 +42,10 @@ can draw:
 
 ```bash
 sourcetruth --demo -o demo.html
-open demo.html          # or double-click it
 ```
+
+Open `demo.html` in a browser: double-click it, or run `open demo.html` on a Mac (`xdg-open` on
+Linux, `start` on Windows).
 
 The first time a map opens, a short tour clicks through it for you. There is a Daml example too:
 
@@ -61,11 +63,11 @@ sourcetruth ./contracts --html -o map.html
 
 Other ways to look at the same code:
 
-```bash
-sourcetruth ./contracts               # a summary and the blind spots, in the terminal
-sourcetruth ./contracts --surface     # actions at most one party can take alone
-sourcetruth ./contracts --holes       # only what couldn't be traced
-```
+| Command | Shows |
+|---|---|
+| `sourcetruth ./contracts` | A summary and the blind spots, in the terminal |
+| `sourcetruth ./contracts --surface` | Actions at most one party can take alone |
+| `sourcetruth ./contracts --holes` | Only what couldn't be traced |
 
 ::: tip Solidity projects
 Install your dependencies first (`forge install`, or `git submodule update --init`). sourcetruth

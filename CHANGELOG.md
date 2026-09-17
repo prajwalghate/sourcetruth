@@ -2,6 +2,11 @@
 
 ## 0.1.1 — 2026-09-17
 
+- **Maps no longer contain the path to the folder you scanned.** 0.1.0 printed the full path (your
+  username, the folders above the project) in the map's code view; a map now shows the folder's name
+  only. `--json` still carries the full path in `root`, for scripts; remove it before sharing.
+- **Docs paste cleanly into zsh**, the macOS default: no `#` notes or `<placeholders>` inside command
+  blocks. A test keeps it that way.
 - **GitHub Action:** now on `actions/setup-node@v7` and `actions/upload-artifact@v7`, which run on
   Node 24 — GitHub is retiring Node 20 on its runners. Self-hosted runners need version 2.327.1 or
   newer. Dependency caching stays off, so the action can't fail in a repository that names npm as its

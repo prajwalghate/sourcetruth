@@ -38,11 +38,19 @@ node sourcetruth/bin/sourcetruth.mjs --help
 
 ## 2. First look: the demo
 
+A small Solidity vault:
+
 ```bash
-sourcetruth --demo -o demo.html          # a small Solidity vault
-sourcetruth --demo daml -o demo-daml.html # a small Daml lending protocol
-open demo.html
+sourcetruth --demo -o demo.html
 ```
+
+A small Daml lending protocol:
+
+```bash
+sourcetruth --demo daml -o demo-daml.html
+```
+
+Open either file in a browser: double-click it, or on a Mac run `open demo.html`.
 
 The first time the map opens, a short tour clicks through it for you. The two demos are written to
 show everything the map can draw — an open function, a guard hidden in a helper, borrowed authority,
@@ -180,10 +188,14 @@ Blind spots alone never fail a run.
 **JSON.** `--json` prints `{ "schemaVersion": 1, "tool": {...}, "units": [...], "entries": [...], ... }`.
 `schemaVersion` changes only when a field changes meaning or is removed.
 
+Every state-changing function with no access check:
+
 ```bash
-# every state-changing function with no access check
 sourcetruth ./src --json | jq -r '.entries[] | select(.authority == [] and .effect != "none" and (.declared|not)) | "\(.unit).\(.name)"'
 ```
+
+`root` is the absolute path of the folder that was read, on the machine that ran the command —
+remove it before sharing the JSON. The HTML map shows only the folder's name.
 
 ---
 
