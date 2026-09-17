@@ -667,6 +667,18 @@ function makeResolver(index, reportedNames, imports = new Map()) {
   return { index, pick, chainOf, lookup, structFields, elementType, classify, usingFor, libFunctions, pureOnly, reportedNames };
 }
 
+/** Index of the first arithmetic operator at nesting depth 0, or -1 (unary minus at the start is not one). */
+function topLevelOperator(e) {
+  let depth = 0;
+  for (let i = 0; i < e.length; i++) {
+    const c = e[i];
+    if ("([".includes(c)) depth++;
+    else if (")]".includes(c)) depth--;
+    else if (depth === 0 && i > 0 && "+-*/%".includes(c) && !"+-*/%=<>!&|".includes(e[i - 1]) && e[i + 1] !== "=" && e[i + 1] !== ">") return i;
+  }
+  return -1;
+}
+
 /** Local variable declarations in a body, as name -> type. */
 function localsOf(body) {
   const env = new Map();
@@ -681,6 +693,7 @@ function localsOf(body) {
 }
 
 /** Read the receiver expression that ends just before `end` (inclusive), walking backwards. */
+const RECEIVER_STOP = new Set(["return", "if", "else", "while", "for", "do", "emit", "revert", "assert", "require", "unchecked", "catch", "try"]);
 function readReceiver(s, end) {
   let i = end;
   while (i >= 0 && /\s/.test(s[i])) i--;
@@ -693,7 +706,14 @@ function readReceiver(s, end) {
       i = o - 1;
       let j = i;
       while (j >= 0 && /\s/.test(s[j])) j--;
-      if (j >= 0 && /[\w]/.test(s[j])) { i = j; continue; }
+      if (j >= 0 && /[\w]/.test(s[j])) {
+        // `return (a + b).x()`: a keyword before the parenthesis is not a call — the group is the receiver.
+        let k = j;
+        while (k >= 0 && /[\w]/.test(s[k])) k--;
+        if (RECEIVER_STOP.has(s.slice(k + 1, j + 1))) break;
+        i = j;
+        continue;
+      }
     } else if (/[\w]/.test(s[i])) {
       while (i >= 0 && /[\w]/.test(s[i])) i--;
     } else break;
@@ -743,6 +763,9 @@ function scanBody(fn, R, ctx = fn.decl, binds = new Map()) {
     if (e === "this") return { self: true };
     if (e === "super") return { super: true };
     if (e === "msg.sender" || e === "tx.origin" || e === "block.coinbase") return { t: "address" };
+    // `(a + b).toInt256()`: arithmetic on values yields a value of the first operand's type.
+    const op = topLevelOperator(e);
+    if (op > 0) return typeOf(e.slice(0, op));
     const call = /^([A-Za-z_][\w.]*)\s*\(/.exec(e);
     if (call && matchPair(e, call[0].length - 1, "(", ")") === e.length - 1) {
       const name = call[1];

@@ -146,12 +146,18 @@ function parseModule(file, root) {
   const defs = [];
 
   for (let i = 0; i < lines.length; i++) {
-    const tm = /^template\s+([A-Z]\w*)\s*$/.exec(lines[i]);
+    // Both layouts are common: `template X` with `with` on the next line, and `template X with`.
+    const tm = /^template\s+([A-Z]\w*)(\s+with)?\s*$/.exec(lines[i]);
     if (tm) {
       const t = { name: tm[1], module: moduleName, path: rel, line: i + 1,
                   fields: [], signatory: null, observer: null, ensure: null, key: null, choices: [] };
       let j = i + 1;
-      if (/^\s+with\s*$/.test(lines[j] ?? "")) {
+      if (tm[2]) {
+        // The fields are whatever is indented deeper than the first one; `where` sits shallower.
+        let f = j;
+        while (f < lines.length && !lines[f].trim()) f++;
+        const r = parseWithBlock(lines, j, Math.max(0, indentOf(lines[f] ?? "") - 1)); t.fields = r.fields; j = r.next;
+      } else if (/^\s+with\s*$/.test(lines[j] ?? "")) {
         const r = parseWithBlock(lines, j + 1, indentOf(lines[j])); t.fields = r.fields; j = r.next;
       }
       let end = j;
@@ -165,9 +171,9 @@ function parseModule(file, root) {
         else if ((m = /^\s+observer\s+(.+)$/.exec(l))) t.observer = m[1].trim();
         else if ((m = /^\s+ensure\s+(.+)$/.exec(l))) t.ensure = m[1].trim();
         else if ((m = /^\s+key\s+(.+)$/.exec(l))) t.key = m[1].trim();
-        else if ((m = /^(\s+)(nonconsuming\s+)?choice\s+([A-Z]\w*)\s*:\s*(.*)$/.exec(l))) {
+        else if ((m = /^(\s+)((?:non|pre|post)consuming\s+)?choice\s+([A-Z]\w*)\s*:\s*(.*)$/.exec(l))) {
           const ind = m[1].length;
-          const c = { name: m[3], consuming: !m[2], returns: m[4].trim(),
+          const c = { name: m[3], consuming: !/^nonconsuming/.test(m[2] ?? ""), returns: m[4].trim(),
                       args: [], controller: null, body: "", rawBody: "",
                       line: j + k + 1, endLine: null, bodyLine: null, guards: [] };
           let p = k + 1;

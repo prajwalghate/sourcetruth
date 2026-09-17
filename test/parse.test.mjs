@@ -197,3 +197,21 @@ test("Daml test packages are not drawn as deployed contracts unless asked", () =
   // Pointing straight at a test package is asking for it.
   assert.deepEqual(names(daml.parse(path.join(root, "checks"))), ["MaliciousFactory"]);
 });
+
+test("`template X with` on one line is a template, and pre/postconsuming choices are choices", () => {
+  // Regression, from Canton's own governance code: 10 of 12 templates put `with` on the template
+  // line, and every one of them was invisible — the package showed 2 templates and no choices.
+  const m = daml.parse(path.join(import.meta.dirname, "fixtures-daml-layouts"));
+  const names = m.units.map((u) => u.name).sort();
+  assert.deepEqual(names, ["Tally", "Vote"]);
+  const vote = m.units.find((u) => u.name === "Vote");
+  assert.deepEqual(vote.fields.map((f) => f.name), ["dso", "voter"], "fields of an inline-with template");
+  const close = m.entries.find((e) => e.unit === "Vote" && e.name === "Vote_Close");
+  assert.ok(close, "postconsuming choice missing");
+  assert.equal(close.effect, EFFECT.TERMINAL, "postconsuming still consumes");
+  assert.deepEqual(close.authority, ["dso"]);
+  const peek = m.entries.find((e) => e.unit === "Vote" && e.name === "Vote_Peek");
+  assert.equal(peek.effect, EFFECT.NONE);
+  const open = m.entries.find((e) => e.unit === "Tally" && e.name === "Tally_Open");
+  assert.ok(open.edges.some((x) => x.resolved && x.target === "Vote"), "create into the inline-with template resolves");
+});

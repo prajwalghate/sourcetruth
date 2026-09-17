@@ -239,3 +239,9 @@ test("inheritance is linearized like the compiler: the implementation precedes t
   assert.equal(tell.inherited, "Impl");
   assert.equal(tell.declared, false);
 });
+
+test("arithmetic on values has a value type — `(a + b).toInt()` is a library computation, not a blind spot", () => {
+  // Regression, from Uniswap v3's swap loop: `(step.amountIn + step.feeAmount).toInt256()` was a hole.
+  assert.deepEqual(holesOf(T("calc")), []);
+  assert.equal(T("calc").edges.length, 0);
+});

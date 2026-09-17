@@ -1,0 +1,31 @@
+module Layouts where
+
+-- The `with` on the SAME line as the template name: the most common layout in the wild.
+template Vote with
+    dso : Party
+    voter : Party
+  where
+    signatory dso
+
+    postconsuming choice Vote_Close : ()
+      controller dso
+      do
+        return ()
+
+    nonconsuming choice Vote_Peek : ()
+      controller voter
+      do
+        return ()
+
+-- The two-line layout, already supported.
+template Tally
+  with
+    dso : Party
+  where
+    signatory dso
+    choice Tally_Open : ContractId Vote
+      with
+        voter : Party
+      controller dso
+      do
+        create Vote with dso; voter

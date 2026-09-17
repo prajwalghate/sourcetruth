@@ -1,5 +1,15 @@
 # Changelog
 
+## Unreleased
+
+- **Daml: `template X with` on one line is now parsed.** Only the two-line layout (`with` on the
+  next line) was recognised, and that is the rarer one: in Canton's own governance package 10 of 12
+  templates were invisible, and the map showed 2 templates and no choices. `preconsuming` and
+  `postconsuming` choices are choices too.
+- **Solidity:** arithmetic on values has a value type, so `(a + b).toInt256()` is a library
+  computation rather than a blind spot, and a keyword before a parenthesis (`return (x).f()`) is
+  not read as a call.
+
 ## 0.1.1 — 2026-09-17
 
 - **Maps no longer contain the path to the folder you scanned.** 0.1.0 printed the full path (your
