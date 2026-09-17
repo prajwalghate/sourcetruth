@@ -184,3 +184,58 @@ test("constructors, interface declarations and TestContracts are never ways in",
 test("a lowercase event after emit is not mistaken for a helper that could hide a check", () => {
   assert.deepEqual(F("maybeGuarded").unread, []);
 });
+
+// ── names resolve in the file that uses them; library bodies are followed ─────────────────────────
+const SCOPE = path.join(import.meta.dirname, "fixtures-evm-scope");
+const sm = evm.parse(SCOPE);
+const T = (n) => sm.entries.find((e) => e.name === n && e.unit === "Token");
+const holesOf = (e) => e.edges.filter((x) => !x.resolved);
+
+test("a name means what the file's imports say — two dependencies can both declare ERC20", () => {
+  // Regression, from a repo vendoring both OpenZeppelin and solmate: the first `ERC20` read won, so a
+  // token that imported OpenZeppelin's got solmate's `balanceOf` mapping, and calling it looked like
+  // an unresolvable function pointer.
+  assert.deepEqual(holesOf(T("units")), [], "balanceOf(a) is a call to the parent this file imports");
+  assert.equal(sm.units.find((u) => u.name === "Token").inherits?.[0] ?? "ERC20", "ERC20");
+});
+
+test("a library body is followed: a revert-only assembly block is not a call, the typed call inside is", () => {
+  assert.deepEqual(holesOf(T("safeGive")), []);
+  const e = calls(T("safeGive"));
+  assert.deepEqual(e, ["IReceiver"]);
+  assert.equal(T("safeGive").edges[0].through, "check");
+});
+
+test("a Yul call names its receiver when the receiver has a contract type; an address stays a hole", () => {
+  assert.deepEqual(calls(T("pushTyped")), ["IToken"]);
+  assert.deepEqual(holesOf(T("pushTyped")), []);
+  const h = holesOf(T("pushRaw"));
+  assert.equal(h.length, 1);
+  assert.equal(h[0].meta.receiver, "t");
+  assert.equal(h[0].meta.assembly, true);
+});
+
+test("a precompile is not a contract, and a view library function on an address is not a call", () => {
+  assert.equal(T("digest").edges.length, 0);
+  assert.equal(T("checkIt").edges.length, 0);
+});
+
+test("a struct field of a call result is typed — even when the struct is declared at file level", () => {
+  assert.deepEqual(holesOf(T("priced")), []);
+  assert.deepEqual(calls(T("priced")), ["IOracle"]);
+});
+
+test("a function pointer is bound to what the caller passes; a pure one is never a blind spot", () => {
+  assert.deepEqual(holesOf(T("fold")), []);
+  assert.deepEqual(calls(T("fold")), ["IToken"], "the bound _double's transfer belongs to fold");
+  assert.deepEqual(holesOf(T("unbound")), []);
+});
+
+test("inheritance is linearized like the compiler: the implementation precedes the interface it fulfils", () => {
+  // Regression, from a vault on OpenZeppelin's ERC4626 (`is ERC20, IERC4626`): a depth-first walk
+  // reached IERC20's declarations before ERC20's bodies, and the vault lost its inherited ERC20 entries.
+  const tell = sm.entries.find((e) => e.unit === "Token" && e.name === "tell");
+  assert.ok(tell, "the inherited implementation is an entry on Token");
+  assert.equal(tell.inherited, "Impl");
+  assert.equal(tell.declared, false);
+});

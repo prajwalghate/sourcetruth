@@ -272,6 +272,21 @@ function parseFile(file, root, reported) {
     decls.push(d);
     RE.lastIndex = close + 1;
   }
+  // Structs and enums declared at file level, outside every contract, are visible to all of them.
+  const outside = (i) => decls.every((d) => i < d.open || i > d.close);
+  for (const s of mk.matchAll(/\bstruct\s+([A-Za-z_]\w*)\s*\{/g)) {
+    if (!outside(s.index)) continue;
+    const end = matchPair(mk, s.index + s[0].length - 1);
+    const fields = new Map();
+    for (const part of mk.slice(s.index + s[0].length, end).split(";")) {
+      const p = splitParams(part.trim())[0];
+      if (p?.name) fields.set(p.name, p.type);
+    }
+    for (const d of decls) if (!d.structs.has(s[1])) d.structs.set(s[1], fields);
+  }
+  for (const s of mk.matchAll(/\benum\s+([A-Za-z_]\w*)\s*\{/g)) {
+    if (outside(s.index)) for (const d of decls) d.enums.add(s[1]);
+  }
   return decls;
 }
 
@@ -474,45 +489,123 @@ function importClosure(files, root) {
   const maps = loadRemappings(cfgDir);
   const readable = new Set(files);
   const missing = new Set();
+  // Per file, what each import brings into scope: every name (`import "x"`, `import * as X`), or
+  // just the listed ones (`import {A, B as C} from "x"`). Names resolve through these, the way the
+  // compiler resolves them — a repo that vendors both OpenZeppelin and solmate has two `ERC20`s.
+  const imports = new Map();
   const queue = [...files];
   while (queue.length) {
     const f = queue.shift();
     let text;
     try { text = stripComments(fs.readFileSync(f, "utf8")); } catch { continue; }
-    for (const m of text.matchAll(/\bimport\s+(?:[^"';]*?\s+from\s+)?["']([^"']+)["']/g)) {
-      let hit = resolveImport(m[1], f, cfgDir, maps);
-      if (!(hit && fs.existsSync(hit)) && !m[1].startsWith(".")) hit = nestedResolve(m[1], cfgDir);
+    const list = [];
+    imports.set(f, list);
+    for (const m of text.matchAll(/\bimport\s+(?:([^"';]*?)\s+from\s+)?["']([^"']+)["']/g)) {
+      const spec = m[2];
+      let hit = resolveImport(spec, f, cfgDir, maps);
+      if (!(hit && fs.existsSync(hit)) && !spec.startsWith(".")) hit = nestedResolve(spec, cfgDir);
+      let names = null;
+      const clause = (m[1] ?? "").trim();
+      if (clause.startsWith("{")) {
+        names = new Map();
+        for (const part of clause.slice(1, clause.lastIndexOf("}")).split(",")) {
+          const a = /^\s*([A-Za-z_]\w*)(?:\s+as\s+([A-Za-z_]\w*))?\s*$/.exec(part);
+          if (a) names.set(a[2] ?? a[1], a[1]);
+        }
+      }
       if (hit && fs.existsSync(hit)) {
+        list.push({ file: hit, names });
         if (!readable.has(hit)) { readable.add(hit); queue.push(hit); }
-      } else missing.add(m[1]);
+      } else missing.add(spec);
     }
   }
-  return { readable: [...readable], missing: [...missing].sort() };
+  return { readable: [...readable], missing: [...missing].sort(), imports };
 }
 
 // ── resolution ───────────────────────────────────────────────────────────────────────────────────
 
-function makeResolver(index, reportedNames) {
-  const pick = (name) => {
-    const all = index.get(String(name).split(".").pop()) ?? [];
+function makeResolver(index, reportedNames, imports = new Map()) {
+  const byFile = new Map();
+  for (const all of index.values()) {
+    for (const d of all) {
+      if (!byFile.has(d.file)) byFile.set(d.file, []);
+      byFile.get(d.file).push(d);
+    }
+  }
+
+  /** The declaration a name means IN a file: its own, else through its imports, transitively. */
+  const inScope = (name, file, seen) => {
+    const key = `${file}\0${name}`;
+    if (seen.has(key)) return null;
+    seen.add(key);
+    const own = (byFile.get(file) ?? []).find((d) => d.name === name);
+    if (own) return own;
+    for (const imp of imports.get(file) ?? []) {
+      const orig = imp.names ? imp.names.get(name) : name;
+      if (orig == null) continue;
+      const hit = inScope(orig, imp.file, seen);
+      if (hit) return hit;
+    }
+    return null;
+  };
+
+  // A name is looked up from the file that uses it when that file is known; two dependencies can
+  // both declare `ERC20`, and which one a contract inherits is decided by its imports, not by which
+  // was read first. The global answer remains for names with no file to start from.
+  const scoped = new Map();
+  const pick = (name, fromFile = null) => {
+    const last = String(name).split(".").pop();
+    if (fromFile) {
+      const key = `${fromFile}\0${last}`;
+      if (!scoped.has(key)) scoped.set(key, inScope(last, fromFile, new Set()));
+      const hit = scoped.get(key);
+      if (hit) return hit;
+    }
+    const all = index.get(last) ?? [];
     return all.find((d) => d.reported) ?? all[0] ?? null;
   };
 
-  /** Most-derived first, then parents right to left, recursively — Solidity's lookup order, near enough. */
+  /**
+   * Solidity's linearization (C3, bases merged right to left), so an implementation always precedes
+   * the interface it implements: for `ERC4626 is ERC20, IERC4626`, ERC20 comes before IERC20. A plain
+   * depth-first walk put the interface first, and an inherited function was read as a declaration.
+   * When the merge cannot complete (a hierarchy the compiler would reject, or a parent that isn't on
+   * disk), the depth-first order is used so nothing is lost.
+   */
   const chainCache = new Map();
-  const chainOf = (d) => {
-    if (chainCache.has(d)) return chainCache.get(d);
+  const depthFirst = (d) => {
     const out = [];
     const seen = new Set();
     const visit = (x) => {
       if (!x || seen.has(x)) return;
       seen.add(x);
       out.push(x);
-      for (const p of [...x.inherits].reverse()) visit(pick(p));
+      for (const p of [...x.inherits].reverse()) visit(pick(p, x.file));
     };
     visit(d);
-    chainCache.set(d, out);
     return out;
+  };
+  const chainOf = (d, stack = new Set()) => {
+    if (chainCache.has(d)) return chainCache.get(d);
+    if (stack.has(d)) return [d];
+    stack.add(d);
+    const parents = [...d.inherits].reverse().map((p) => pick(p, d.file)).filter(Boolean);
+    const lists = parents.map((p) => [...chainOf(p, stack)]);
+    lists.push([...parents]);
+    const out = [d];
+    let ok = true;
+    for (;;) {
+      const live = lists.filter((l) => l.length);
+      if (!live.length) break;
+      const head = live.map((l) => l[0]).find((h) => live.every((l) => !l.slice(1).includes(h)));
+      if (!head) { ok = false; break; }
+      if (!out.includes(head)) out.push(head);
+      for (const l of live) if (l[0] === head) l.shift();
+    }
+    const chain = ok ? out : depthFirst(d);
+    stack.delete(d);
+    chainCache.set(d, chain);
+    return chain;
   };
 
   /** Implementations with this name in the most-derived contract that has one. */
@@ -567,22 +660,11 @@ function makeResolver(index, reportedNames) {
     }
     return null;
   };
-  const libFunctions = (lib, method) => (pick(lib)?.functions ?? []).filter((f) => f.name === method);
+  const libFunctions = (lib, method, fromFile = null) =>
+    (pick(lib, fromFile)?.functions ?? []).filter((f) => f.name === method && f.bodyOpen != null);
   const pureOnly = (fns) => fns.length > 0 && fns.every((f) => f.mutability === "pure" || f.mutability === "view");
 
-  /** Does a library function make a low-level or assembly call anywhere in its body? */
-  const lowCache = new Map();
-  const libLowLevel = (lib, method) => {
-    const key = `${lib}.${method}`;
-    if (!lowCache.has(key)) {
-      lowCache.set(key, false);
-      const fns = libFunctions(lib, method).filter((f) => f.bodyOpen != null);
-      lowCache.set(key, fns.some((f) => /\.\s*(call|delegatecall|staticcall)\s*[({]|\bassembly\b/.test(f.decl.mk.slice(f.bodyOpen, f.bodyClose))));
-    }
-    return lowCache.get(key);
-  };
-
-  return { index, pick, chainOf, lookup, structFields, elementType, classify, usingFor, libFunctions, pureOnly, libLowLevel, reportedNames };
+  return { index, pick, chainOf, lookup, structFields, elementType, classify, usingFor, libFunctions, pureOnly, reportedNames };
 }
 
 /** Local variable declarations in a body, as name -> type. */
@@ -628,12 +710,15 @@ function readReceiver(s, end) {
  * followed by `(` is dropped without a reason: it is an edge, a hole, an internal call, or named as
  * not being a call at all.
  */
-function scanBody(fn, R, ctx = fn.decl) {
+function scanBody(fn, R, ctx = fn.decl, binds = new Map()) {
   // Text comes from where the function is written; names resolve against the contract that actually
   // runs it. An inherited `deposit()` calling `_deposit(...)` reaches the child's OVERRIDE — that is
   // virtual dispatch, and resolving against the base would trace code that never executes.
+  // A library's body is different: a bare name there is the library's own function.
   const d = fn.decl;
   const chain = R.chainOf(ctx);
+  const lookChain = d.kind === "library" ? [d] : chain;
+  const usingChain = d.kind === "library" ? [d, ...chain] : chain;
   const { mk, src, starts } = d;
   const open = fn.bodyOpen + 1, close = fn.bodyClose;
   const body = mk.slice(open, close);
@@ -664,7 +749,17 @@ function scanBody(fn, R, ctx = fn.decl) {
       if (name === "address" || name === "payable") return { t: "address" };
       if (ELEMENTARY.test(name)) return { t: name };
       if (/^[A-Z]/.test(name.split(".").pop())) return { t: name };
-      const f = R.lookup(chain, name).find((x) => x.returns.length);
+      const dot = name.lastIndexOf(".");
+      if (dot > 0) {
+        // `oracle.getPrice(x)`: the return type of getPrice on whatever oracle is.
+        const recv = typeOf(name.slice(0, dot));
+        const method = name.slice(dot + 1);
+        const fns = recv?.self ? R.lookup(chain, method)
+          : recv?.t ? (R.pick(recv.t, d.file)?.functions ?? []).filter((x) => x.name === method) : [];
+        const f = fns.find((x) => x.returns.length);
+        return f ? { t: f.returns[0].type } : null;
+      }
+      const f = R.lookup(lookChain, name).find((x) => x.returns.length);
       return f ? { t: f.returns[0].type } : null;
     }
     if (e.endsWith("]")) {
@@ -703,17 +798,31 @@ function scanBody(fn, R, ctx = fn.decl) {
   };
   const add = (i, site) => sites.push({ ...site, ...rawAt(i) });
   const unitName = (t) => String(t).replace(/\s+payable$/, "").trim().split(".").pop();
+  /** The call's arguments, split at top-level commas, for binding and for reading a Yul receiver. */
+  const argsAt = (parenAt) => {
+    const close = matchPair(body, parenAt, "(", ")");
+    return close > 0 ? splitTop(body.slice(parenAt + 1, close), ",").map((s) => s.trim()) : [];
+  };
 
   const CALL = /([A-Za-z_]\w*)\s*(\{[^{}]*\}\s*)?\(/g;
   for (let m; (m = CALL.exec(body)) !== null;) {
     const name = m[1];
     const at = m.index;
+    const parenAt = at + m[0].length - 1;
     let p = at - 1;
     while (p >= 0 && /\s/.test(body[p])) p--;
     const prevWord = (() => { let q = p; while (q >= 0 && /\w/.test(body[q])) q--; return body.slice(q + 1, p + 1); })();
 
     if (inYul(at)) {
-      if (YUL_CALLS.has(name)) add(at, { cls: "hole", kind: EDGE.CALL, meta: { lowLevel: name, assembly: true } });
+      if (YUL_CALLS.has(name)) {
+        // `call(gas(), WHO, ...)`: the second argument is the receiver. A small literal is a precompile
+        // (hashing, ecrecover); a name with a contract type is a call this code CAN name.
+        const who = argsAt(parenAt)[1] ?? "";
+        const t = /^[A-Za-z_]\w*$/.test(who) && env.has(who) ? env.get(who) : null;
+        if (/^(0x0*[1-9a-f]|[1-9]|1[0-9])$/i.test(who)) add(at, { cls: "skip", why: "precompile", name });
+        else if (t && R.classify(t, chain) === "contract") add(at, { cls: "edge", kind: EDGE.CALL, target: unitName(t), meta: { lowLevel: name, assembly: true, receiver: who } });
+        else add(at, { cls: "hole", kind: EDGE.CALL, meta: { lowLevel: name, assembly: true, ...(who ? { receiver: who } : {}) } });
+      }
       else if (name === "create" || name === "create2") add(at, { cls: "hole", kind: EDGE.CREATE, meta: { assembly: true } });
       else if (name === "selfdestruct") add(at, { cls: "hole", kind: EDGE.DESTROY, meta: { assembly: true } });
       else add(at, { cls: "skip", why: "yul builtin", name });
@@ -733,9 +842,17 @@ function scanBody(fn, R, ctx = fn.decl) {
     if (name === "selfdestruct" || name === "suicide") { add(at, { cls: "hole", kind: EDGE.DESTROY, meta: {} }); continue; }
     if (NOT_A_CALL.has(name) || ELEMENTARY.test(name)) { add(at, { cls: "skip", why: "builtin", name }); continue; }
     if (/^[A-Z]/.test(name)) { add(at, { cls: "skip", why: "cast or struct", name }); continue; }
-    const impls = byArity(R.lookup(chain, name), at + m[0].length - 1);
-    if (impls.length) { add(at, { cls: "internal", name, impls }); continue; }
-    if (env.has(name)) { add(at, { cls: "hole", kind: EDGE.CALL, meta: { receiver: name, pointer: true } }); continue; }
+    const impls = byArity(R.lookup(lookChain, name), parenAt);
+    if (impls.length) { add(at, { cls: "internal", name, impls, args: argsAt(parenAt) }); continue; }
+    if (env.has(name)) {
+      // A function-typed parameter. The caller decides what it is: bound at the call site when the
+      // argument names a function in this code; a `pure` one can touch nothing either way.
+      const bound = binds.get(name);
+      if (bound?.length) { add(at, { cls: "internal", name, impls: bound, args: argsAt(parenAt) }); continue; }
+      if (/^function\b/.test(env.get(name)) && /\bpure\b/.test(env.get(name))) { add(at, { cls: "skip", why: "pure function pointer", name }); continue; }
+      add(at, { cls: "hole", kind: EDGE.CALL, meta: { receiver: name, pointer: true } });
+      continue;
+    }
     add(at, { cls: "skip", why: "internal, not found in this code", name, unresolvedInternal: true });
   }
 
@@ -751,42 +868,50 @@ function scanBody(fn, R, ctx = fn.decl) {
       return;
     }
     // `Name.method(` on a bare type name: a library call, or an explicit call into a base contract.
+    /**
+     * A library function is inlined into its caller, so what it does is what the caller does: its
+     * body is followed like a helper's. A pure or view one touches nothing. When the library isn't
+     * on disk, the call is an edge to it — a name, never a guess at what it did.
+     */
+    const viaLibrary = (lib, receiverHole) => {
+      const fns = R.libFunctions(lib, method, d.file);
+      if (R.pureOnly(fns)) { add(at, { cls: "skip", why: "pure library function", name: method }); return; }
+      if (fns.length) { add(at, { cls: "internal", name: method, impls: byArity(fns, parenAt), lib, args: argsAt(parenAt) }); return; }
+      if (receiverHole) add(at, { cls: "hole", kind: EDGE.CALL, meta: { lowLevel: method, library: lib, receiver: receiverHole } });
+      else add(at, { cls: "edge", kind: EDGE.CALL, target: unitName(lib), meta: { library: lib, method } });
+    };
     if (/^[A-Z]\w*(\.[A-Z]\w*)*$/.test(r) && !env.has(r)) {
-      const decl = R.pick(r);
+      const decl = R.pick(r, d.file);
       if (decl?.kind === "library") {
-        if (R.pureOnly(R.libFunctions(r, method))) { add(at, { cls: "skip", why: "pure library function", name: method }); return; }
         // `SafeERC20.safeTransfer(IERC20(token), …)` acts ON the token: when the first argument has a
-        // contract type, that is what is called. When it is a bare address, what the library does
-        // to it decides — an address handed to a low-level call is a target nobody can name.
-        const close = matchPair(body, parenAt, "(", ")");
-        const first = close > 0 ? splitTop(body.slice(parenAt + 1, close), ",")[0] : null;
+        // contract type, that is what is called. Otherwise the library's body says what happens.
+        const first = argsAt(parenAt)[0];
         const ft = first ? typeOf(first) : null;
-        const fk = R.classify(ft?.t, chain);
-        if (fk === "contract") { add(at, { cls: "edge", kind: EDGE.CALL, target: unitName(ft.t), meta: { library: r, method } }); return; }
-        if (fk === "address" && R.libLowLevel(r, method)) { add(at, { cls: "hole", kind: EDGE.CALL, meta: { library: r, method, lowLevel: "via library", receiver: first } }); return; }
-        add(at, { cls: "edge", kind: EDGE.CALL, target: unitName(r), meta: { library: r, method } });
+        if (R.classify(ft?.t, chain) === "contract" && !R.pureOnly(R.libFunctions(r, method, d.file))) {
+          add(at, { cls: "edge", kind: EDGE.CALL, target: unitName(ft.t), meta: { library: r, method } });
+          return;
+        }
+        viaLibrary(r, null);
         return;
       }
-      if (decl && chain.includes(decl)) { add(at, { cls: "internal", name: method, impls: byArity(R.lookup(R.chainOf(decl), method), parenAt) }); return; }
+      if (decl && chain.includes(decl)) { add(at, { cls: "internal", name: method, impls: byArity(R.lookup(R.chainOf(decl), method), parenAt), args: argsAt(parenAt) }); return; }
       if (!decl) { add(at, { cls: "edge", kind: EDGE.CALL, target: unitName(r), meta: { method } }); return; }
       add(at, { cls: "skip", why: "type member", name: method });
       return;
     }
     const t = typeOf(r);
     if (t?.self) { add(at, { cls: "edge", kind: EDGE.CALL, target: ctx.name, meta: { method, selfCall: true } }); return; }
-    if (t?.super) { add(at, { cls: "internal", name: method, impls: byArity(R.lookup(chain, method, { skipFirst: true }), parenAt) }); return; }
+    if (t?.super) { add(at, { cls: "internal", name: method, impls: byArity(R.lookup(chain, method, { skipFirst: true }), parenAt), args: argsAt(parenAt) }); return; }
     const kind = R.classify(t?.t, chain);
-    const lib = t?.t ? R.usingFor(chain, t.t) : null;
+    const lib = t?.t ? R.usingFor(usingChain, t.t) : null;
     if (kind === "address") {
-      if (method === "transfer" || method === "send") {
-        add(at, { cls: "hole", kind: EDGE.CALL, meta: { eth: true, receiver: r } });
-      } else {
-        add(at, { cls: "hole", kind: EDGE.CALL, meta: { lowLevel: method, library: lib, receiver: r } });
-      }
+      if (method === "transfer" || method === "send") add(at, { cls: "hole", kind: EDGE.CALL, meta: { eth: true, receiver: r } });
+      else if (lib) viaLibrary(lib, r);
+      else add(at, { cls: "hole", kind: EDGE.CALL, meta: { lowLevel: method, library: null, receiver: r } });
       return;
     }
     if (kind === "contract") {
-      add(at, { cls: "edge", kind: EDGE.CALL, target: unitName(t.t), meta: { method, library: lib && R.libFunctions(lib, method).length ? lib : (lib && !R.pick(lib) ? lib : null) } });
+      add(at, { cls: "edge", kind: EDGE.CALL, target: unitName(t.t), meta: { method, library: lib && R.libFunctions(lib, method, d.file).length ? lib : (lib && !R.pick(lib, d.file) ? lib : null) } });
       return;
     }
     if (kind === "collection" && (method === "push" || method === "pop")) { add(at, { cls: "skip", why: "array builtin", name: method }); return; }
@@ -794,11 +919,7 @@ function scanBody(fn, R, ctx = fn.decl) {
       add(at, { cls: "skip", why: "library computation on a value", name: method });
       return;
     }
-    if (kind === "struct" && lib) {
-      if (R.pureOnly(R.libFunctions(lib, method))) { add(at, { cls: "skip", why: "pure library function", name: method }); return; }
-      add(at, { cls: "edge", kind: EDGE.CALL, target: unitName(lib), meta: { library: lib, method } });
-      return;
-    }
+    if (kind === "struct" && lib) { viaLibrary(lib, null); return; }
     add(at, { cls: "hole", kind: EDGE.CALL, meta: { receiver: r, method } });
   }
 
@@ -956,7 +1077,7 @@ export function parse(root, opts = {}) {
   // Everything is READ, lib/ included, whether or not it is REPORTED: `onlyOwner` and the helpers
   // behind it live in vendored OpenZeppelin, and whether a modifier checks the caller is a fact
   // about its body.
-  const { readable, missing } = importClosure(files, root);
+  const { readable, missing, imports } = importClosure(files, root);
   const index = new Map();
   const reported = [];
   for (const f of readable) {
@@ -969,14 +1090,29 @@ export function parse(root, opts = {}) {
     }
   }
   const reportedNames = new Set(reported.map((d) => d.name));
-  const R = makeResolver(index, reportedNames);
+  const R = makeResolver(index, reportedNames, imports);
 
   const trace = { sites: 0, edges: 0, holes: 0, internal: 0, skipped: 0, unresolvedInternal: new Set() };
   const siteCache = new Map();
-  const sitesOf = (fn, ctx) => {
-    const key = `${fn.decl.rel}:${fn.line}@${ctx.rel}:${ctx.name}`;
-    if (!siteCache.has(key)) siteCache.set(key, fn.bodyOpen == null ? [] : scanBody(fn, R, ctx));
+  const NO_BINDS = new Map();
+  const sitesOf = (fn, ctx, binds = NO_BINDS) => {
+    const bound = [...binds].map(([k, v]) => `${k}=${v.map((f) => `${f.decl.rel}:${f.line}`).join("|")}`).join(",");
+    const key = `${fn.decl.rel}:${fn.line}@${ctx.rel}:${ctx.name}#${bound}`;
+    if (!siteCache.has(key)) siteCache.set(key, fn.bodyOpen == null ? [] : scanBody(fn, R, ctx, binds));
     return siteCache.get(key);
+  };
+
+  /** What a call site passes for each function-typed parameter, when it names a function here. */
+  const bindingsFor = (site, impl, caller, ctx) => {
+    const binds = new Map();
+    const scope = caller.decl.kind === "library" ? [caller.decl] : R.chainOf(ctx);
+    impl.params.forEach((p, i) => {
+      const a = site.args?.[i];
+      if (!p.name || !/^function\b/.test(p.type) || !a || !/^[A-Za-z_]\w*$/.test(a)) return;
+      const fns = R.lookup(scope, a);
+      if (fns.length) binds.set(p.name, fns);
+    });
+    return binds;
   };
   const toEdge = (s, through = null) => edge({
     kind: s.kind, target: s.cls === "edge" ? s.target : null, raw: s.raw, through,
@@ -990,17 +1126,20 @@ export function parse(root, opts = {}) {
    * that is itself vendored (an inherited `deposit()`), and only a few levels deep — enough to show
    * the token pull inside OpenZeppelin's deposit, not enough to trace all of OpenZeppelin.
    */
-  const edgesOf = (fn, ctx, { vendored = false, seen = new Set(), through = null, depth = 0 } = {}) => {
+  const edgesOf = (fn, ctx, { vendored = false, seen = new Set(), through = null, depth = 0, binds = NO_BINDS } = {}) => {
     const out = [];
-    for (const site of sitesOf(fn, ctx)) {
+    for (const site of sitesOf(fn, ctx, binds)) {
       if (site.cls === "edge" || site.cls === "hole") out.push(toEdge(site, through));
       else if (site.cls === "internal") {
         for (const impl of site.impls ?? []) {
-          if (!impl.decl.reported && !(vendored && depth < 3)) continue;
+          // A library body is where the call it makes lives, so it is always read (bounded, in case
+          // libraries call libraries); other vendored helpers only for vendored entries.
+          const inLibrary = site.lib || impl.decl.kind === "library";
+          if (inLibrary ? depth > 8 : !impl.decl.reported && !(vendored && depth < 3)) continue;
           const key = `${impl.decl.rel}:${impl.line}`;
           if (seen.has(key)) continue;
           seen.add(key);
-          out.push(...edgesOf(impl, ctx, { vendored, seen, through: through ?? impl.name, depth: depth + 1 }));
+          out.push(...edgesOf(impl, ctx, { vendored, seen, through: through ?? impl.name, depth: depth + 1, binds: bindingsFor(site, impl, fn, ctx) }));
         }
       }
     }
@@ -1093,10 +1232,13 @@ export function parse(root, opts = {}) {
       const seenSig = new Set();
       for (const anc of chain) {
         for (const fn of anc.functions) {
+          // A declaration without a body never claims the signature: the implementation, wherever
+          // it is in the chain, is what a caller reaches.
+          if (fn.bodyOpen == null) continue;
           const sig = arity(fn);
           if (seenSig.has(sig)) continue;
           seenSig.add(sig);
-          if (anc === d || anc.reported || anc.kind === "interface" || fn.bodyOpen == null) continue;
+          if (anc === d || anc.reported || anc.kind === "interface") continue;
           if (fn.kind !== "function" || !(fn.visibility === "public" || fn.visibility === "external")) continue;
           entries.push(buildEntry(fn, d, anc.name));
         }
@@ -1137,7 +1279,7 @@ export function traceSites(root, opts = {}) {
   const files = findSources(root, opts);
   const base = fs.statSync(root).isFile() ? path.dirname(root) : root;
   const reportedFiles = new Set(files);
-  const { readable } = importClosure(files, root);
+  const { readable, imports } = importClosure(files, root);
   const index = new Map();
   const reported = [];
   for (const f of readable) {
@@ -1147,7 +1289,7 @@ export function traceSites(root, opts = {}) {
       if (d.reported) reported.push(d);
     }
   }
-  const R = makeResolver(index, new Set(reported.map((d) => d.name)));
+  const R = makeResolver(index, new Set(reported.map((d) => d.name)), imports);
   const rows = [];
   for (const d of reported) {
     for (const fn of d.functions) {

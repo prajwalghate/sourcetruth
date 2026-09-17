@@ -24,7 +24,9 @@ through:
 - typed state variables, parameters, locals, return values, and array or mapping elements
   (`strategies[i].harvest()`);
 - casts (`IERC20(token).transfer(...)`), `this.`, and `super.`;
-- `using SafeERC20 for IERC20` and static library calls — shown against the token they act on;
+- `using SafeERC20 for IERC20` and static library calls — shown against the token they act on.
+  Otherwise a library function's body is read like a helper's: what it calls is what your
+  function calls, and a Yul `call` inside it is named when its receiver has a contract type;
 - overloads, matched by argument count;
 - internal helpers, own and inherited, with the helper named on each step.
 
