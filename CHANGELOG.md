@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.1.2 — 2026-09-18
 
 - **Play at your own pace.** An action's flow can be paused, stepped back and forward, and slowed
   down or sped up; `space`, `←` and `→` do the same from the keyboard. Before, it ran on a fixed
