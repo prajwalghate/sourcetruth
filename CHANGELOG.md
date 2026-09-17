@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+- **Play at your own pace.** An action's flow can be paused, stepped back and forward, and slowed
+  down or sped up; `space`, `←` and `→` do the same from the keyboard. Before, it ran on a fixed
+  clock, and a reader had no time to take a step in before the next one landed.
+- **The tour names the blind-spot badge in amber**, the way the map does.
+- **Phones and short windows.** The top bar keeps to icons on a phone instead of overflowing; the
+  map keeps at least 200px of height on a short window and the legend no longer covers cards on a
+  small map. A tour placement scheduled just before the tour was closed no longer throws.
 - **Daml: `template X with` on one line is now parsed.** Only the two-line layout (`with` on the
   next line) was recognised, and that is the rarer one: in Canton's own governance package 10 of 12
   templates were invisible, and the map showed 2 templates and no choices. `preconsuming` and

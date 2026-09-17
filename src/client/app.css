@@ -100,7 +100,7 @@ svg.i.solid { fill: currentColor; stroke: none; }
 .tabs { display: flex; gap: 2px; background: var(--raised); border: 1px solid var(--line); border-radius: 9px;
   padding: 2px; margin-left: 6px; }
 .tab { border: 0; background: none; padding: 5px 13px; border-radius: 7px; cursor: pointer; color: var(--muted);
-  font-weight: 550; }
+  font-weight: 550; display: inline-flex; align-items: center; gap: 6px; }
 .tab:hover { color: var(--ink); }
 .tab[aria-selected="true"] { background: var(--surface); color: var(--ink); box-shadow: var(--shadow); }
 
@@ -281,7 +281,13 @@ svg.i.solid { fill: currentColor; stroke: none; }
 .strip.power .stamp { color: var(--power); border-color: color-mix(in srgb, var(--power) 40%, transparent); background: var(--surface); }
 .strip.warn { background: var(--end-soft); color: var(--end); }
 .strip.blind { background: var(--blind-soft); color: var(--blind); }
-.actions-bar { display: flex; gap: 8px; margin: 12px 0 4px; }
+.actions-bar { display: flex; gap: 8px; margin: 12px 0 4px; flex-wrap: wrap; align-items: center; }
+.transport { display: flex; align-items: center; gap: 4px; flex-wrap: wrap; }
+.transport .btn.icon { padding: 5px 7px; }
+.transport .btn.speed { color: var(--muted); font-size: 12px; padding-right: 8px; }
+.transport .btn[disabled] { opacity: 0.38; cursor: default; }
+.transport .btn[disabled]:hover { border-color: var(--line); }
+.transport .prog { color: var(--faint); font-size: 12px; font-variant-numeric: tabular-nums; margin-left: 3px; }
 
 .tx { position: relative; display: flex; flex-direction: column; gap: 2px; margin-top: 4px; }
 .tx::before { content: ""; position: absolute; left: 18px; top: 10px; bottom: 10px; width: 1px; background: var(--line); }
@@ -387,6 +393,7 @@ details.fold[open] > summary svg { transform: rotate(90deg); }
   box-shadow: var(--shadow-lift); padding: 13px 14px 11px; pointer-events: auto; border: 1px solid var(--line);
   transition: left 0.35s, top 0.35s; }
 .tour-tip p { margin: 0 0 10px; font-size: 14px; font-weight: 550; }
+.tour-tip .amber { color: var(--blind); font-weight: 700; }
 .tour-actions { display: flex; align-items: center; gap: 8px; }
 .tour-actions .n { color: var(--faint); font-size: 12px; font-variant-numeric: tabular-nums; margin-right: auto; }
 
@@ -411,12 +418,29 @@ details.fold[open] > summary svg { transform: rotate(90deg); }
   .person { width: auto; flex: none; padding: 4px 8px; }
   .counts { display: none; }
 }
+/* One column: the map above, the details below. The map keeps at least 200px even on a short
+   window, and the details never take more than they can use. The legend would sit on the cards. */
 @media (max-width: 880px) {
-  .app { grid-template-columns: minmax(0, 1fr); grid-template-rows: 52px auto minmax(0, 1fr) 44vh;
+  .app { grid-template-columns: minmax(0, 1fr); grid-template-rows: 52px auto minmax(200px, 1fr) clamp(220px, 44vh, 460px);
     grid-template-areas: "top" "people" "map" "inspect"; }
   .people .label { display: none; }
-  .inspect { border-left: 0; border-top: 1px solid var(--line); }
-  .trace, .brand-title { display: none; }
+  .inspect { border-left: 0; border-top: 1px solid var(--line); padding: 14px 14px 32px; }
+  .trace, .brand-title, .legend { display: none; }
+  .map-tools { bottom: 10px; right: 10px; }
+  .learn { padding: 18px 14px 48px; }
+  .tour-tip { width: min(290px, calc(100vw - 20px)); }
+}
+/* A phone: icons carry the top bar, the words go. */
+@media (max-width: 640px) {
+  .top { gap: 8px; padding: 0 10px; }
+  .top-right { gap: 6px; }
+  .tabs { margin-left: 0; }
+  .tab { padding: 5px 9px; }
+  .tab .lbl, .top .btn .lbl { display: none; }
+  .brand-name { display: none; }
+  .top .btn { padding: 5px 8px; }
+  .inspect .h.big { font-size: 17px; }
+  .code-snippet { max-height: 240px; }
 }
 @media print {
   .js #app { display: none; }

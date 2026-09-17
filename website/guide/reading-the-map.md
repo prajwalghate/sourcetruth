@@ -7,7 +7,7 @@
 | **Outside / Inside** | Every party the code lets act. *Outside* can act without the protocol's own parties. | Click one: the map lights up every contract they can reach. |
 | **The map** | Contracts as cards. Solid arrows *create*, dashed arrows *call*. Dashed cards are defined outside the code you pointed at. | Drag to pan, pinch or ⌘-scroll to zoom, **Fit** to see everything. |
 | **Where can someone outside get in?** | Actions an outsider can take alone, riskiest first. | Start at the top. |
-| **An action** | Who fires it; what it does to its own contract; whose authority it also carries; which contract ids the caller picks; every archive, create and call in code order. | Press **Play**. |
+| **An action** | Who fires it; what it does to its own contract; whose authority it also carries; which contract ids the caller picks; every archive, create and call in code order. | Press **Play** — then pause, step back and forward, or slow it down. |
 | **A contract** | Its life: made by → replaced by → ended by, and who reads it. | Look for *Nothing in this code ends it* on anything that holds value. |
 | **Blind spots** | Calls whose target can't be named from source. | Read them before trusting the rest. |
 | **Learn** | Each idea of the language, drawn with contracts from your code. | Read it once if the language is new to you. |
@@ -42,7 +42,7 @@ What an action does to the contract it's on:
 
 ## Keyboard and links
 
-- `Esc` goes back a step · `P` plays the selected action.
+- `Esc` goes back a step · `P` plays the selected action · `space` pauses and resumes · `←` `→` step back and forward.
 - Links open the map at a place, on load or while it's open:
 
 | Link | Opens |

@@ -78,6 +78,10 @@
     map: ["M2.5 4l3.8-1.5 3.4 1.5 3.8-1.5v9.5l-3.8 1.5-3.4-1.5-3.8 1.5z", "M6.3 2.5V12", "M9.7 4v9.5"],
     learn: ["M1.8 5.2L8 2.6l6.2 2.6L8 7.8z", "M4.4 6.4v3.4c0 1 1.6 2.1 3.6 2.1s3.6-1.1 3.6-2.1V6.4"],
     tour: ["M8 14A6 6 0 1 0 8 2a6 6 0 0 0 0 12z", "M6.8 5.6l3.4 2.4-3.4 2.4z"],
+    pause: ["M5.6 3.4v9.2", "M10.4 3.4v9.2"],
+    next: ["M4.8 3.8L9.2 8l-4.4 4.2", "M11.4 3.8v8.4"],
+    prev: ["M11.2 3.8L6.8 8l4.4 4.2", "M4.6 3.8v8.4"],
+    speed: ["M8 14A6 6 0 1 0 8 2a6 6 0 0 0 0 12z", "M8 4.8V8l2.3 1.5"],
     mark: ["M5.2 2.8H3v10.4h2.2", "M10.8 2.8H13v10.4h-2.2", "M8 9.3a1.3 1.3 0 1 0 0-2.6 1.3 1.3 0 0 0 0 2.6z"],
   };
   function icon(name, extra = "") {
@@ -141,7 +145,7 @@
   function renderTop() {
     const tab = (view, label, ic) => h("button", {
       class: "tab", "data-view": view, "aria-selected": String(S.view === view), onclick: () => setView(view),
-    }, icon(ic), " ", label);
+    }, icon(ic), h("span", { class: "lbl", text: label }));
     tabsEl.replaceChildren(tab("map", "Map", "map"), tab("learn", "Learn", "learn"), tab("code", "Code", "code"));
     const st = D.stats;
     // Declarations and constructors are not actions anyone takes; the count says what the map shows.
@@ -162,8 +166,8 @@
         st.holes > 0 ? h("button", {
           class: "btn blind", onclick: () => { setView("map"); select({ t: "blind" }); },
           title: "Links the tool could not trace. It does not guess them.",
-        }, icon("blind"), plural(st.holes, "blind spot")) : null,
-        h("button", { class: "btn", onclick: () => startTour() }, icon("tour"), "Tour")),
+        }, icon("blind"), String(st.holes), h("span", { class: "lbl", text: st.holes === 1 ? "blind spot" : "blind spots" })) : null,
+        h("button", { class: "btn", onclick: () => startTour(), "aria-label": "Tour" }, icon("tour"), h("span", { class: "lbl", text: "Tour" }))),
     );
   }
 
@@ -496,46 +500,141 @@
   }
 
   // ── play ────────────────────────────────────────────────────────────────────────────────────────
-  let timers = [];
+  // One step at a time, at the reader's pace. The first version ran the whole flow on a fixed clock,
+  // and a reader had no time to take a step in before the next one landed — so: pause, step back
+  // and forward, and slow it down. The reader is in charge of the clock.
+  const SPEED_KEY = "sourcetruth.speed.v1";
+  const SPEEDS = [["slow", 0.5], ["normal", 1], ["fast", 2]];
+  const GAP = 820;
+  let speed = 1;
+  try { const v = Number(localStorage.getItem(SPEED_KEY)); if (SPEEDS.some(([, x]) => x === v)) speed = v; } catch { /* default */ }
+  let P = null; // the run: { e, steps, rows, reads, k (next step), timer, paused, done }
+
   function stopPlay() {
-    for (const t of timers) clearTimeout(t);
-    timers = [];
+    if (P) clearTimeout(P.timer);
+    P = null;
     S.playing = null;
   }
-  function play(i) {
+  function showStep(k, live) {
+    P.rows.forEach((r, j) => { r.classList.toggle("now", j === k && live); r.classList.toggle("pending", j > k); });
+    applyStep(P.e, P.steps[k], live);
+    P.rows[k]?.scrollIntoView({ block: "nearest", behavior: live ? "smooth" : "auto" });
+  }
+  /** The map as it is just before step k: everything earlier drawn, nothing later. */
+  function drawUpTo(k) {
+    paintMap();
+    addToken(P.e);
+    P.rows.forEach((r, j) => { r.classList.toggle("pending", j >= k); r.classList.toggle("now", j === k - 1); });
+    for (let j = 0; j < k; j++) applyStep(P.e, P.steps[j], false);
+  }
+  function finish() {
+    for (const st of P.reads) applyStep(P.e, st, false);
+    P.rows.forEach((r) => r.classList.remove("now", "pending"));
+    P.done = true;
+    P.paused = true;
+    renderTransport();
+  }
+  function schedule(delay) {
+    clearTimeout(P.timer);
+    P.timer = setTimeout(tick, delay / speed);
+  }
+  function tick() {
+    if (!P || P.paused) return;
+    if (P.k >= P.steps.length) { finish(); return; }
+    showStep(P.k, true);
+    P.k++;
+    renderTransport();
+    schedule(P.k >= P.steps.length ? GAP + 500 : GAP);
+  }
+  /** Set the run up on an action, paused at the start. */
+  function arm(i) {
     stopPlay();
     const e = E[i];
     if (!same(S.sel, { t: "entry", i })) select({ t: "entry", i }, { trail: "keep", center: false });
     S.playing = i;
-    paintMap();
-    const steps = changes(e);
-    const rows = [...inspEl.querySelectorAll(".tx.changes .row")];
-    const btn = inspEl.querySelector(".play");
-    frame([`u${e.unit}`, ...steps.map((st) => st.to).filter(Boolean)]);
-    addToken(e);
-    const reads = readsOf(e);
-    const quick = reduceMotion();
-    rows.forEach((r) => r.classList.add("pending"));
-    if (btn) btn.replaceChildren(icon("play"), "Playing…");
-    const gap = 820;
-    steps.forEach((st, k) => {
-      const run = () => {
-        rows.forEach((r, j) => {
-          r.classList.toggle("now", j === k && !quick);
-          if (j <= k) r.classList.remove("pending");
-        });
-        applyStep(e, st, !quick);
-        rows[k]?.scrollIntoView({ block: "nearest", behavior: quick ? "auto" : "smooth" });
-      };
-      if (quick) run(); else timers.push(setTimeout(run, 650 + k * gap));
-    });
-    const done = () => {
-      for (const st of reads) applyStep(e, st, false);
-      rows.forEach((r) => r.classList.remove("now", "pending"));
-      S.playing = null;
-      if (btn) btn.replaceChildren(icon("replay"), "Play again");
-    };
-    if (quick) done(); else timers.push(setTimeout(done, 650 + steps.length * gap + 500));
+    P = { e, steps: changes(e), rows: [...inspEl.querySelectorAll(".tx.changes .row")], reads: readsOf(e),
+          k: 0, timer: null, paused: true, done: false };
+    frame([`u${e.unit}`, ...P.steps.map((st) => st.to).filter(Boolean)]);
+    drawUpTo(0);
+  }
+  function play(i) {
+    arm(i);
+    if (reduceMotion()) {
+      while (P.k < P.steps.length) { showStep(P.k, false); P.k++; }
+      finish();
+      return;
+    }
+    P.paused = false;
+    renderTransport();
+    schedule(650);
+  }
+  function pausePlay() {
+    if (!P || P.paused) return;
+    clearTimeout(P.timer);
+    P.paused = true;
+    renderTransport();
+  }
+  function resumePlay() {
+    if (!P || !P.paused || P.done) return;
+    P.paused = false;
+    renderTransport();
+    schedule(250);
+  }
+  function togglePlay() {
+    if (S.sel?.t !== "entry") return;
+    if (!P || P.done) play(S.sel.i);
+    else if (P.paused) resumePlay();
+    else pausePlay();
+  }
+  function stepNext() {
+    if (S.sel?.t !== "entry") return;
+    if (!P) arm(S.sel.i);
+    if (P.done) return;
+    clearTimeout(P.timer);
+    P.paused = true;
+    showStep(P.k, true);
+    P.k++;
+    if (P.k >= P.steps.length) finish(); else renderTransport();
+  }
+  function stepPrev() {
+    if (!P || P.k === 0) return;
+    clearTimeout(P.timer);
+    P.paused = true;
+    P.done = false;
+    P.k--;
+    drawUpTo(P.k);
+    renderTransport();
+  }
+  function cycleSpeed() {
+    const at = SPEEDS.findIndex(([, x]) => x === speed);
+    speed = SPEEDS[(at + 1) % SPEEDS.length][1];
+    try { localStorage.setItem(SPEED_KEY, String(speed)); } catch { /* fine */ }
+    if (P && !P.paused) schedule(GAP);
+    renderTransport();
+  }
+  /** The controls for the selected action, reflecting where the run is. */
+  function transportKids(e) {
+    const mine = P && P.e === e;
+    const n = changes(e).length;
+    const at = mine ? Math.min(P.k, n) : 0;
+    const label = SPEEDS.find(([, x]) => x === speed)[0];
+    const main = !mine || P.done
+      ? h("button", { class: "btn flow play", onclick: () => play(e.i), title: "Play (P)" }, icon(mine ? "replay" : "play"), mine ? "Play again" : "Play")
+      : P.paused
+        ? h("button", { class: "btn flow play", onclick: resumePlay, title: "Resume (space)" }, icon("play"), "Resume")
+        : h("button", { class: "btn flow play", onclick: pausePlay, title: "Pause (space)" }, icon("pause"), "Pause");
+    return [
+      main,
+      h("button", { class: "btn icon", onclick: stepPrev, disabled: !mine || P.k === 0, title: "Step back (←)", "aria-label": "Step back" }, icon("prev")),
+      h("button", { class: "btn icon", onclick: stepNext, disabled: mine && P.done, title: "Step forward (→)", "aria-label": "Step forward" }, icon("next")),
+      h("button", { class: "btn icon speed", onclick: cycleSpeed, title: `Speed: ${label} — click to change`, "aria-label": `Speed: ${label}` }, icon("speed"), label),
+      n ? h("span", { class: "prog", text: `${at} / ${n}` }) : null,
+    ];
+  }
+  function renderTransport() {
+    const box = inspEl.querySelector(".transport");
+    const e = S.sel?.t === "entry" ? E[S.sel.i] : null;
+    if (box && e) box.replaceChildren(...transportKids(e));
   }
 
   // ── selection ───────────────────────────────────────────────────────────────────────────────────
@@ -816,7 +915,7 @@
       e.unread.length ? h("div", { class: "strip blind", title: "An access check may live in code the tool could not read" },
         icon("blind"), "relies on code that isn't on disk:", e.unread.map((x) => stamp(x))) : null,
       h("div", { class: "actions-bar" },
-        h("button", { class: "btn flow play", onclick: () => play(e.i) }, icon("play"), "Play"),
+        h("div", { class: "transport", role: "group", "aria-label": "Play controls" }, transportKids(e)),
         codeButton(e.anchor)),
       h("div", { class: "section" },
         h("div", { class: "label", text: "What it changes, in order" }),
@@ -956,7 +1055,8 @@
         run: () => { select({ t: "entry", i: door }, { trail: "reset" }); tourTimer = setTimeout(() => play(door), 450); } },
       made && { el: () => inspEl.querySelector(".life") ?? inspEl, text: "Every contract has a life: what makes it, what replaces it, what ends it.",
         run: () => select({ t: "unit", i: Number(made.to.slice(1)) }) },
-      D.stats.holes > 0 && { el: () => topEl.querySelector(".btn.blind"), text: "Amber means the tool couldn't trace a line. It never guesses — read those yourself.",
+      D.stats.holes > 0 && { el: () => topEl.querySelector(".btn.blind"),
+        text: () => ["This amber ", h("b", { class: "amber", text: plural(D.stats.holes, "blind spot") }), " is a line the tool couldn't trace. It never guesses — read those yourself."],
         run: () => {} },
       { el: () => tabsEl.querySelector('[data-view="learn"]'), text: "New to this language? Learn shows each idea using this code.",
         run: () => {} },
@@ -978,7 +1078,8 @@
     tourEl = h("div", { class: "tour" }, hole, tip);
     document.body.append(tourEl);
     const place = () => {
-      const el = steps[k].el();
+      // A placement can be scheduled (600ms after a step shows) and fire after the tour has ended.
+      const el = tourEl && steps[k] ? steps[k].el() : null;
       if (!el) return;
       const r = el.getBoundingClientRect();
       const pad = 6;
@@ -994,8 +1095,9 @@
       clearTimeout(tourTimer);
       stopPlay();
       steps[k].run?.();
+      const text = typeof steps[k].text === "function" ? steps[k].text() : [steps[k].text];
       tip.replaceChildren(
-        h("p", { text: steps[k].text }),
+        h("p", null, ...text),
         h("div", { class: "tour-actions" },
           h("span", { class: "n", text: `${k + 1} / ${steps.length}` }),
           h("button", { class: "btn ghost", onclick: endTour, text: "Skip" }),
@@ -1039,7 +1141,11 @@
     if (tourEl || ev.defaultPrevented) return;
     const typing = /^(INPUT|TEXTAREA|SELECT)$/.test(document.activeElement?.tagName ?? "");
     if (ev.key === "Escape" && S.view === "map" && S.sel) { ev.preventDefault(); goBack(); }
-    else if (!typing && (ev.key === "p" || ev.key === "P") && S.sel?.t === "entry") play(S.sel.i);
+    else if (typing || S.view !== "map" || S.sel?.t !== "entry") return;
+    else if (ev.key === "p" || ev.key === "P") play(S.sel.i);
+    else if (ev.key === " ") { ev.preventDefault(); togglePlay(); }
+    else if (ev.key === "ArrowRight") { ev.preventDefault(); stepNext(); }
+    else if (ev.key === "ArrowLeft") { ev.preventDefault(); stepPrev(); }
   });
 
   // Links open things on the map: #e-Unit-action, #u-Unit, #a-party. Followed on load AND while the
